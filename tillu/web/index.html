@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Tillu</title>
+<link rel="icon" href="/static/logo.png">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="brand">
+      <button class="icon-btn only-mobile" id="close-side" aria-label="Close menu">✕</button>
+      <img class="logo" src="/static/logo.png" alt=""><span class="name">Agent Tillu</span>
+      <span id="model-pill" class="pill" title="Model server">…</span>
+    </div>
+    <nav>
+      <button class="nav-item" data-view="today" id="nav-today"><span class="avatar">☀️</span><span class="meta"><b>Today</b><small>Approvals, questions, routine results</small></span><span class="badge" id="today-badge" hidden></span></button>
+      <div class="section-label">Team <button class="link-btn" id="hire-btn">+ Hire</button></div>
+      <div id="agent-list"></div>
+    </nav>
+    <div class="side-foot">
+      <button class="ghost" data-view="audit">📜 Activity log</button>
+      <button class="ghost" id="settings-btn">⚙️ Settings</button>
+    </div>
+  </aside>
+
+  <main id="main">
+    <header id="topbar">
+      <button class="icon-btn only-mobile" id="open-side" aria-label="Open menu">☰</button>
+      <div id="title-block"><h1 id="title">Agent Tillu</h1><div id="subtitle"></div></div>
+      <div class="top-actions">
+        <button class="danger-outline" id="stop-btn" hidden>⏹ Stop</button>
+        <button class="ghost" id="panel-btn" hidden>Details</button>
+      </div>
+    </header>
+
+    <section id="view-chat" class="view" hidden>
+      <div id="thread" aria-live="polite"></div>
+      <form id="composer">
+        <textarea id="input" rows="1" placeholder="Message…" title="Enter to send, Shift+Enter for a new line"></textarea>
+        <button type="submit" class="primary" id="send-btn">Send</button>
+      </form>
+    </section>
+
+    <section id="view-today" class="view scroll" hidden></section>
+    <section id="view-audit" class="view scroll" hidden></section>
+  </main>
+
+  <aside id="panel" hidden>
+    <div class="tabs">
+      <button data-tab="memory" class="active">Memory</button>
+      <button data-tab="routines">Routines</button>
+      <button data-tab="rules">Rules</button>
+      <button data-tab="profile">Profile</button>
+      <button class="icon-btn" id="close-panel" aria-label="Close">✕</button>
+    </div>
+    <div id="panel-body" class="scroll"></div>
+  </aside>
+</div>
+
+<dialog id="modal"><div id="modal-body"></div></dialog>
+<div id="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
