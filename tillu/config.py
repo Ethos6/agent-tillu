@@ -28,6 +28,10 @@ class Config:
     token: str = field(default="")
 
     @property
+    def public_host(self) -> str:
+        return "127.0.0.1" if self.host in ("0.0.0.0", "::", "") else self.host
+
+    @property
     def db_path(self) -> Path:
         return self.data_dir / "tillu.db"
 

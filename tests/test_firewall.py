@@ -46,7 +46,9 @@ def ext(target="bob@x.com"):
 def test_decide_basics():
     assert decide(Classification("read"), tool="read_file", autonomy="ask", tainted=False, origin="operator", rules=[]).action == "allow"
     assert decide(Classification("browse"), tool="web_fetch", autonomy="watch", tainted=False, origin="operator", rules=[]).action == "allow"
-    assert decide(Classification("workspace"), tool="write_file", autonomy="watch", tainted=False, origin="operator", rules=[]).action == "block"
+    assert decide(Classification("workspace"), tool="write_file", autonomy="watch", tainted=False, origin="operator", rules=[]).action == "allow"
+    assert decide(Classification("external", target="x"), tool="http_request", autonomy="watch", tainted=False, origin="operator", rules=[]).action == "block"
+    assert decide(Classification("system"), tool="shell", autonomy="watch", tainted=False, origin="operator", rules=[]).action == "block"
     assert decide(Classification("system"), tool="shell", autonomy="ask", tainted=False, origin="operator", rules=[]).action == "ask"
     assert decide(Classification("system"), tool="shell", autonomy="autopilot", tainted=False, origin="operator", rules=[]).action == "allow"
     assert decide(Classification("system"), tool="shell", autonomy="autopilot", tainted=False, origin="operator", rules=[], shell_enabled=False).action == "block"

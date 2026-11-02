@@ -226,7 +226,7 @@ def create_app(cfg: Config, runtime: Runtime | None = None) -> FastAPI:
         r = dict(r)
         r["human"] = describe_cron(r["cron"]) if r["cron"] else "on webhook"
         if r.get("webhook_secret"):
-            r["webhook_url"] = f"http://{cfg.host}:{cfg.port}/hook/{r['webhook_secret']}"
+            r["webhook_url"] = f"http://{cfg.public_host}:{cfg.port}/hook/{r['webhook_secret']}"
         r.pop("webhook_secret", None)
         return r
 

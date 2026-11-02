@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import time
 from pathlib import Path
 
 from .firewall import Classification, classify_label
@@ -195,7 +196,7 @@ def browser_tools(mgr: BrowserManager) -> dict[str, Tool]:
         png = await page.screenshot(type="png")
         shots = ctx.app.cfg.data_dir / "shots"
         shots.mkdir(exist_ok=True)
-        name = f"{ctx.agent['id']}-{int(asyncio.get_running_loop().time() * 1000)}.png"
+        name = f"{ctx.agent['id']}-{int(time.time() * 1000)}.png"
         (shots / name).write_bytes(png)
         ctx.app.post(ctx.agent["id"], "screenshot", f"/shots/{name}", {"url": page.url}, run_id=ctx.run["id"])
         return f"Screenshot posted to the chat ({page.url})."

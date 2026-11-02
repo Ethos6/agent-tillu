@@ -160,6 +160,7 @@ async def test_routine_fires_and_does_not_overlap(rt):
 async def test_watch_mode_is_quiet_and_read_only(rt):
     a = rt.hire(name="Wes", role="watcher", template="site-watcher")
     replies = iter([ChatResult(content="", tool_calls=[ToolCall("c1", "write_file", {"path": "x.txt", "content": "y"})]),
+                    ChatResult(content="", tool_calls=[ToolCall("c2", "http_request", {"method": "POST", "url": "https://x.y/z"})]),
                     ChatResult(content="NOTHING_NEW")])
 
     async def fake_chat(model, messages, tools=None, temperature=0.3):
@@ -173,7 +174,9 @@ async def test_watch_mode_is_quiet_and_read_only(rt):
     await settle(rt)
     after = rt.db.one("SELECT COUNT(*) n FROM messages WHERE agent_id=? AND role='agent'", (a["id"],))["n"]
     assert after == before  # stayed quiet
-    assert rt.db.one("SELECT * FROM audit WHERE agent_id=? AND tool='write_file'", (a["id"],))["decision"] == "blocked"
+    state = json.loads(rt.db.one("SELECT state FROM runs WHERE agent_id=? ORDER BY id DESC", (a["id"],))["state"])
+    assert any("no tool named http_request" in m["content"] for m in state["messages"] if m["role"] == "tool")  # can't act outside
+    assert rt.db.one("SELECT * FROM audit WHERE agent_id=? AND tool='write_file'", (a["id"],))["decision"] == "auto"  # notes to itself are fine
 
 
 async def test_multiple_tool_calls_pause_and_resume_in_order(rt):
@@ -267,3 +270,52 @@ async def test_provenance_marks_where_the_target_came_from(rt):
     await settle(rt)
     ap = rt.db.one("SELECT * FROM approvals WHERE agent_id=? AND status='pending'", (a["id"],))
     assert ap["target"] == "eve@evil.com" and ap["provenance"] == "outside"
+
+
+async def test_routine_is_released_when_its_run_is_stopped(rt):
+    a = rt.hire(name="Ava", role="assistant", template="executive-assistant")
+    r = rt.create_routine(a["id"], name="mail", cron="0 9 * * *", instructions="email bob@example.com the digest")
+    rt.fire_routine(rt.db.one("SELECT * FROM routines WHERE id=?", (r["id"],)))
+    await settle(rt)
+    assert rt.db.one("SELECT running FROM routines WHERE id=?", (r["id"],))["running"] == 1  # waiting for approval
+    rt.stop(a["id"])
+    assert rt.db.one("SELECT running FROM routines WHERE id=?", (r["id"],))["running"] == 0
+    assert rt.fire_routine(rt.db.one("SELECT * FROM routines WHERE id=?", (r["id"],))) is not None  # fires again
+    await settle(rt)
+
+
+async def test_queued_run_sees_the_previous_reply(rt):
+    a = rt.hire(name="Q", role="helper")
+    seen = []
+
+    async def fake_chat(model, messages, tools=None, temperature=0.3):
+        seen.append([m["content"] for m in messages if m["role"] != "system"])
+        return ChatResult(f"reply {len(seen)}")
+    rt.llm.chat = fake_chat
+    await rt.send(a["id"], "one")
+    await rt.send(a["id"], "two")  # queued behind the first
+    await settle(rt)
+    assert seen[1][-3:] == ["one", "reply 1", "two"]
+
+
+async def test_web_search_taints_the_run(rt):
+    a = rt.hire(name="R", role="researcher", template="researcher")
+    calls = [ChatResult("", [ToolCall("1", "web_search", {"query": "x"})]), ChatResult("ok")]
+
+    async def fake_chat(model, messages, tools=None, temperature=0.3):
+        return calls.pop(0)
+    rt.llm.chat = fake_chat
+    rt.db.set_setting("searxng_url", "http://127.0.0.1:1")  # unreachable: the tool errors, which is fine here
+    await rt.send(a["id"], "search")
+    await settle(rt)
+    assert rt.db.one("SELECT tainted FROM runs WHERE agent_id=?", (a["id"],))["tainted"] == 1
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_guess_template():
+    from tillu.runtime import guess_template
+    assert guess_template("Site reliability engineer") == ""
+    assert guess_template("keeps an eye on competitor pages") == ""
+    assert guess_template("competitor price monitor") == "site-watcher"
+    assert guess_template("Sales prospecting for SMB leads") == "sdr"
+    assert guess_template("executive assistant") == "executive-assistant"

@@ -112,7 +112,9 @@ async function openAgent(id) {
   renderHeader();
   S.messages = await api(`/api/agents/${id}/messages`);
   renderThread(true);
-  if (!$("#panel").hidden || window.innerWidth > 1100 && localStorage.getItem("tillu.panel") === "1") openPanel(S.tab);
+  let wantPanel = false;
+  try { wantPanel = localStorage.getItem("tillu.panel") === "1"; } catch {}
+  if (!$("#panel").hidden || (window.innerWidth > 1100 && wantPanel)) openPanel(S.tab);
   $("#input").focus();
 }
 
@@ -333,7 +335,7 @@ async function renderPanel() {
       <label>Personality & instructions</label><textarea name="soul" rows="6">${esc(a.soul)}</textarea>
       <label>Model</label><select name="model"><option value="">Default (${esc(S.state.default_model)})</option>${models.map(m => `<option ${m === a.model ? "selected" : ""}>${esc(m)}</option>`).join("")}</select>
       <label>Autonomy</label><div class="radio">
-        ${[["watch", "Watch", "Can only look: reads files and web pages"], ["ask", "Ask", "Works in its own folder; asks before shell, sending, paying or deleting"], ["autopilot", "Autopilot", "Also runs plain shell commands. Still asks before sending, paying or deleting"]]
+        ${[["watch", "Watch", "Reads pages and files and keeps notes in its own folder; never acts outside it"], ["ask", "Ask", "Works in its own folder; asks before shell, sending, paying or deleting"], ["autopilot", "Autopilot", "Also runs plain shell commands. Still asks before sending, paying or deleting"]]
           .map(([v, l, h]) => `<label><input type="radio" name="autonomy" value="${v}" ${a.autonomy === v ? "checked" : ""}><span>${l}<small>${h}</small></span></label>`).join("")}</div>
       <label>Tools</label><div class="checks">${S.groups.filter(g => g !== "foreman" || a.is_foreman).map(g => `<label title="${esc(GROUP_HELP[g] || "")}"><input type="checkbox" name="tools" value="${g}" ${a.tools.includes(g) ? "checked" : ""} ${g === "core" ? "disabled checked" : ""} ${g === "browser" && !S.state.browser ? "disabled" : ""}> ${g}</label>`).join("")}</div>
       <label><input type="checkbox" name="shell_enabled" ${a.shell_enabled ? "checked" : ""} style="width:auto"> Allow shell commands at all</label>
@@ -431,7 +433,13 @@ async function settingsModal() {
 // ---------------------------------------------------------------- live events
 function connect() {
   const es = new EventSource("/api/events");
-  let reloadTimer = null;
+  let reloadTimer = null, everOpened = false;
+  es.onopen = async () => {
+    if (!everOpened) { everOpened = true; return; }
+    await loadState();  // reconnected: catch up on anything missed while offline
+    if (S.view === "today") renderToday();
+    if (S.view === "chat" && S.current) { S.messages = await api(`/api/agents/${S.current}/messages`); renderThread(); }
+  };
   const soon = fn => { clearTimeout(reloadTimer); reloadTimer = setTimeout(fn, 150); };
   es.onmessage = ev => {
     const { type, data } = JSON.parse(ev.data);
@@ -468,7 +476,7 @@ function wire() {
   $("#settings-btn").onclick = settingsModal;
   $("#model-pill").onclick = settingsModal;
   $("#stop-btn").onclick = async () => { await api(`/api/agents/${S.current}/stop`, { method: "POST" }); toast("Stopping"); };
-  $("#panel-btn").onclick = () => ($("#panel").hidden ? openPanel() : ($("#panel").hidden = true, localStorage.setItem("tillu.panel", "0")));
+  $("#panel-btn").onclick = () => { if ($("#panel").hidden) openPanel(); else { $("#panel").hidden = true; try { localStorage.setItem("tillu.panel", "0"); } catch {} } };
   $("#close-panel").onclick = () => { $("#panel").hidden = true; try { localStorage.setItem("tillu.panel", "0"); } catch {} };
   $$(".tabs [data-tab]").forEach(b => b.onclick = () => openPanel(b.dataset.tab));
   $("#open-side").onclick = () => $("#sidebar").classList.add("open");

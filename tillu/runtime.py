@@ -63,13 +63,23 @@ def describe_cron(expr: str) -> str:
     return expr
 
 
+TEMPLATE_HINTS = {
+    "researcher": ["researcher", "research", "analyst-research"],
+    "data-analyst": ["analyst", "analytics", "data", "kpi", "reporting"],
+    "social-media": ["social", "marketing", "content", "posts"],
+    "reputation": ["reputation", "reviews", "review"],
+    "sdr": ["sdr", "sales", "prospect", "prospects", "leads", "outreach"],
+    "collections": ["collections", "invoice", "invoices", "receivables"],
+    "site-watcher": ["watcher", "monitor", "monitoring", "watch"],
+    "executive-assistant": ["assistant", "executive", "inbox", "calendar", "secretary"],
+}
+
+
 def guess_template(role: str) -> str:
+    """Pick a template from a free-text job description, only on distinctive words."""
     words = set(re.findall(r"[a-z]+", role.lower()))
-    for key, t in TEMPLATES.items():
-        if key == "foreman":
-            continue
-        keys = set(key.split("-")) | set(re.findall(r"[a-z]+", t["role"].split(":")[0].lower()))
-        if words & keys - {"manager", "and", "a", "the"}:
+    for key, hints in TEMPLATE_HINTS.items():
+        if words & set(hints):
             return key
     return ""
 
@@ -267,10 +277,10 @@ class Runtime:
 
     def _new_run(self, agent_id: str, origin: str, text: str, *, history: bool, hop: int = 0, parent_run_id: int | None = None,
                  routine_id: int | None = None, tainted: bool = False, taint_reason: str = "", watch: bool = False) -> dict:
-        messages = self._history(agent_id) if history else []
-        if not history or not messages or messages[-1].get("content") != text:
-            messages.append({"role": "user", "content": text})
-        rid = self.db.insert("runs", {"agent_id": agent_id, "origin": origin, "status": "queued", "state": json.dumps({"messages": messages, "watch": watch}),
+        # With history, the conversation is loaded when the run actually starts (see _loop), so a run queued behind
+        # another one still sees that run's reply.
+        state = {"messages": [] if history else [{"role": "user", "content": text}], "seed": text if history else None, "watch": watch}
+        rid = self.db.insert("runs", {"agent_id": agent_id, "origin": origin, "status": "queued", "state": json.dumps(state),
                                       "tainted": int(tainted), "taint_reason": taint_reason, "hop": hop, "parent_run_id": parent_run_id,
                                       "routine_id": routine_id, "created_at": now(), "updated_at": now()})
         return self.db.one("SELECT * FROM runs WHERE id=?", (rid,))
@@ -304,12 +314,36 @@ class Runtime:
                 await self._finish(agent, run, None)
             finally:
                 self.stop_flags.discard(run_id)
+                self._release_routine(run)
                 self.emit_status(agent["id"])
+
+    def _release_routine(self, run: dict) -> None:
+        """A routine may fire again once its run is over; only a run still waiting for the person keeps it busy."""
+        rid = run.get("routine_id")
+        if not rid:
+            return
+        status = (self.db.one("SELECT status FROM runs WHERE id=?", (run["id"],)) or {}).get("status")
+        if status in ("waiting", "running", "queued"):
+            return
+        r = self.db.one("SELECT running, last_result FROM routines WHERE id=?", (rid,))
+        if r and r["running"]:
+            self.db.update("routines", "id", rid, {"running": 0, "last_result": r["last_result"] or (status or "")})
+            self.bus.emit("routines", {"agent_id": run["agent_id"]})
 
     async def _loop(self, agent: dict, run: dict, state: dict, resume: list[dict] | None) -> None:
         watch = bool(state.get("watch"))
         tools = self.tools_for(agent, watch=watch)
         specs = [t.spec() for t in tools.values()]
+        if state.get("seed") is not None:
+            seed = state.pop("seed")
+            history = self._history(agent["id"])
+            # The message this run answers goes last, even if it was posted while an earlier run was still replying.
+            for k in range(len(history) - 1, -1, -1):
+                if history[k]["role"] == "user" and history[k].get("content") == seed:
+                    del history[k]
+                    break
+            history.append({"role": "user", "content": seed})
+            state["messages"] = history
         messages: list[dict] = state["messages"]
         ctx = ToolCtx(self, agent, run)
 
@@ -610,10 +644,11 @@ class Runtime:
             self.stop_flags.add(r["id"])
             n += 1
         # Waiting runs are cancelled outright: their pending cards are withdrawn.
-        for r in self.db.all("SELECT id FROM runs WHERE agent_id=? AND status='waiting'", (agent_id,)):
+        for r in self.db.all("SELECT * FROM runs WHERE agent_id=? AND status='waiting'", (agent_id,)):
             self.db.update("runs", "id", r["id"], {"status": "stopped"})
             self.db.execute("UPDATE approvals SET status='withdrawn', resolved_at=? WHERE run_id=? AND status='pending'", (now(), r["id"]))
             self.db.execute("UPDATE questions SET status='withdrawn' WHERE run_id=? AND status='pending'", (r["id"],))
+            self._release_routine(r)
             n += 1
         self.bus.emit("approvals", {"agent_id": agent_id})
         self.emit_status(agent_id)
@@ -651,7 +686,7 @@ class Runtime:
         r = self.db.one("SELECT * FROM routines WHERE id=?", (rid,))
         r["human"] = describe_cron(cron) if cron else "when its webhook is called"
         if secret:
-            r["webhook_url"] = f"http://{self.cfg.host}:{self.cfg.port}/hook/{secret}"
+            r["webhook_url"] = f"http://{self.cfg.public_host}:{self.cfg.port}/hook/{secret}"
         self.post(agent_id, "system", f"⏰ New routine “{r['name']}” — {r['human']}" + (" (watch: read-only, quiet unless something changes)" if r["mode"] == "watch" else ""))
         self.bus.emit("routines", {"agent_id": agent_id})
         return r

@@ -67,7 +67,7 @@ S = {"type": "string"}
 
 def const(effect: str, summary: Callable[[dict], str] = lambda a: "", target: Callable[[dict], str] = lambda a: "") -> Classifier:
     async def f(args: dict, ctx: ToolCtx) -> Classification:
-        return Classification(effect, target=target(args), summary=summary(args))
+        return Classification(effect, target=target(args), summary=summary(args), taints=effect == "browse")
     return f
 
 

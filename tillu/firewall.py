@@ -169,8 +169,8 @@ def decide(
         return Decision("block", c.why or "this action is never allowed", classification=c)
     if tool == "shell" and not shell_enabled:
         return Decision("block", "shell commands are turned off for this coworker (turn them on in its settings)", classification=c)
-    if autonomy == "watch" and e not in ("read", "browse"):
-        return Decision("block", "this coworker is in watch-only mode: it can look but not act", classification=c)
+    if autonomy == "watch" and e not in ("read", "browse", "workspace"):
+        return Decision("block", "this coworker is in watch mode: it can look and take notes, but not act outside its workspace", classification=c)
     if e in ("read", "workspace", "browse"):
         return Decision("allow", "no side effects outside its workspace", classification=c)
     if e == "system":
