@@ -278,7 +278,8 @@ async def send_email(args: dict, ctx: ToolCtx) -> str:
         out = ctx.workspace / "outbox"
         out.mkdir(exist_ok=True)
         import datetime as _dt
-        f = out / f"{_dt.datetime.now():%Y%m%d-%H%M%S}-{re.sub(r'[^\w.@-]', '_', str(args['to']))[:60]}.eml"
+        safe_to = re.sub(r"[^\w.@-]", "_", str(args["to"]))[:60]
+        f = out / f"{_dt.datetime.now():%Y%m%d-%H%M%S}-{safe_to}.eml"
         n = 2
         while f.exists():
             f, n = f.with_name(f"{f.stem.rsplit('~', 1)[0]}~{n}.eml"), n + 1
