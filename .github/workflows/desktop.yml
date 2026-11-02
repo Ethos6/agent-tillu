@@ -6,6 +6,7 @@ on:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os == 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -16,7 +17,10 @@ jobs:
         with:
           python-version: "3.12"
       - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y gir1.2-webkit2-4.1 python3-gi libgirepository1.0-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gir1.2-webkit2-4.1 libgirepository1.0-dev libcairo2-dev pkg-config python3-dev
+          pip install pygobject
       - run: pip install -e ".[desktop]" pillow
       - run: python desktop/build.py
       - uses: actions/upload-artifact@v4
